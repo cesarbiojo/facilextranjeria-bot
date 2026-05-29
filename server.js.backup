@@ -1,0 +1,111 @@
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
+
+// DIRECTRICES DEL BOT
+const SYSTEM_PROMPT = `Eres un asistente legal especializado en procesos de extranjería en España.
+
+TU TRABAJO:
+1. Saludar de forma amigable y profesional
+2. Identificar qué tipo de proceso necesita el cliente:
+   - NIE (Número de Identidad de Extranjero)
+   - TIE (Tarjeta de Identidad de Extranjero)
+   - Arraigo Social/Laboral/Familiar
+   - Reagrupación Familiar
+   - Nacionalidad Española
+   
+3. Hacer preguntas específicas para cualificar el caso:
+   - Nacionalidad actual
+   - Tiempo de residencia en España
+   - Situación laboral
+   - Documentación disponible
+   - Situación familiar
+
+4. Ser empático - muchas personas están en situación vulnerable
+5. Explicar en lenguaje simple, sin jerga legal compleja
+6. Si no sabes algo, di que un abogado lo revisará personalmente
+
+IMPORTANTE:
+- NO des asesoría legal definitiva
+- Solo orientación inicial
+- Detecta si el caso necesita revisión urgente
+- Sé breve en tus respuestas (máximo 3-4 líneas por WhatsApp)`;
+
+// Almacenar conversaciones en memoria (temporal)
+const conversaciones = {};
+
+app.post('/whatsapp', async (req, res) => {
+  const mensajeRecibido = req.body.Body;
+  const numeroCliente = req.body.From;
+  
+  console.log('📱 Mensaje recibido:', mensajeRecibido);
+  console.log('👤 De:', numeroCliente);
+  
+  try {
+    // Crear historial si no existe
+    if (!conversaciones[numeroCliente]) {
+      conversaciones[numeroCliente] = [];
+    }
+    
+    // Añadir mensaje del usuario
+    conversaciones[numeroCliente].push({
+      role: 'user',
+      content: mensajeRecibido
+    });
+    
+    // Consultar a Claude
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      system: SYSTEM_PROMPT,
+      messages: conversaciones[numeroCliente]
+    });
+    
+    const respuestaBot = response.content[0].text;
+    
+    // Añadir respuesta al historial
+    conversaciones[numeroCliente].push({
+      role: 'assistant',
+      content: respuestaBot
+    });
+    
+    console.log('🤖 Claude respondió:', respuestaBot);
+    
+    // Enviar por WhatsApp
+    res.set('Content-Type', 'text/xml');
+    res.send(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Message>${respuestaBot}</Message>
+      </Response>
+    `);
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.set('Content-Type', 'text/xml');
+    res.send(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Message>Disculpa, hubo un error técnico. Por favor intenta de nuevo en un momento.</Message>
+      </Response>
+    `);
+  }
+});
+
+app.get('/', (req, res) => {
+  res.send('✅ Bot inteligente de extranjería funcionando!');
+});
+
+const PORT = 3001;
+app.listen(PORT, () => {
+  console.log('🚀 Bot inteligente corriendo en http://localhost:3001');
+  console.log('🧠 Claude AI conectado');
+});
