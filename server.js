@@ -1,15 +1,24 @@
 require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
 const Anthropic = require('@anthropic-ai/sdk');
 const { Pool } = require('pg');
 
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
+
+
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -160,6 +169,7 @@ CONTEXTO DE NEGOCIO:
 - Reportes mensuales de conversaciones serán enviados`;
 
 app.post('/whatsapp', async (req, res) => {
+  console.log('📨 Webhook recibido:', JSON.stringify(req.body));
   const mensajeRecibido = req.body.Body;
   const numeroCliente = req.body.From;
 
@@ -223,7 +233,7 @@ app.post('/whatsapp', async (req, res) => {
     console.log('📊 Estado conversación:', estado);
 
     // Enviar respuesta a Twilio en formato TwiML
-    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${respuestaBot}</Message></Response>`;
+    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(respuestaBot)}</Message></Response>`;
 
     res.type('text/xml');
     res.send(twimlResponse);
